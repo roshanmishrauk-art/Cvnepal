@@ -363,4 +363,106 @@ function setStep(n){ state.step=n; render(); }
 function setTemplate(t){ state.form.template=t; render(); }
 function addExp(){ state.form.experiences.push({title:'',company:'',duration:'',duties:''}); render(); }
 function addEdu(){ state.form.educations.push({degree:'',institution:'',year:''}); render(); }
-function startOver()
+function startOver(){ state.form=blankForm(); state.generatedCV=''; state.step=0; render(); }
+
+function doRegister(){
+  const {name,email,password}=state.authForm;
+  if(!name||!email||!password){ state.authErr='Fill all fields.'; render(); return; }
+  const users=getUsers();
+  if(users[email]){ state.authErr='Email already registered.'; render(); return; }
+  users[email]={name,password,cvs:[]};
+  saveUsers(users);
+  const u={email,name};
+  setSession(u); state.user=u; state.authErr=''; state.screen='app'; render();
+}
+
+function doLogin(){
+  const {email,password}=state.authForm;
+  const users=getUsers();
+  const u=users[email];
+  if(!u||u.password!==password){ state.authErr='Wrong email or password.'; render(); return; }
+  const sess={email,name:u.name};
+  setSession(sess); state.user=sess; state.savedCVs=u.cvs||[]; state.authErr=''; state.screen='app'; render();
+}
+
+function doLogout(){ clearSession(); state.user=null; state.screen='home'; state.form=blankForm(); state.generatedCV=''; state.step=0; render(); }
+
+function loadMyCVs(){
+  const users=getUsers();
+  state.savedCVs=(users[state.user?.email]?.cvs)||[];
+  state.screen='myCVs'; render();
+}
+
+function loadCV(i){
+  const saved=state.savedCVs[i];
+  state.form=saved.form; state.generatedCV=saved.cv; state.step=4; state.screen='app'; render();
+}
+
+function saveCV(){
+  if(!state.user){ showToast('Please log in to save.'); return; }
+  const users=getUsers();
+  const saved={id:Date.now(),title:state.form.name||'Untitled',template:state.form.template,form:state.form,cv:state.generatedCV,date:new Date().toLocaleDateString('en-GB')};
+  users[state.user.email].cvs=[saved,...(users[state.user.email].cvs||[])];
+  saveUsers(users);
+  state.savedCVs=users[state.user.email].cvs;
+  showToast('CV saved successfully!');
+}
+
+function downloadPDF(){
+  const f=state.form;
+  const tColor=T[f.template]?.header||'#1e3a5f';
+  const html=`<!DOCTYPE html><html><head><title>${f.name} CV</title>
+  <style>body{margin:0;font-family:'Segoe UI',Arial,sans-serif;}
+  .header{background:${tColor};color:#fff;padding:28px 32px 20px;}
+  .body{padding:24px 32px;white-space:pre-wrap;font-size:13px;line-height:1.65;color:#1e293b;}
+  @media print{body{margin:0;}}</style></head>
+  <body>
+  <div class="header">
+    <div style="font-size:26px;font-weight:800;">${f.name||'Your Name'}</div>
+    <div style="font-size:12px;opacity:.85;margin-top:6px;">${[f.email,f.phone,f.location,f.linkedin].filter(Boolean).join('  |  ')}</div>
+  </div>
+  <div class="body">${state.generatedCV}</div>
+  <script>window.onload=function(){window.print();window.close();}<\/script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  w.document.write(html); w.document.close();
+}
+
+async function generateCV(){
+  state.loading=true; state.generatedCV=''; render();
+  const f=state.form;
+  const prompt=`You are a professional UK CV writer. Write a polished ATS-friendly CV body (no personal details header — handled separately) based on:
+
+SUMMARY: ${f.summary}
+EXPERIENCE:
+${f.experiences.map((e,i)=>`${i+1}. ${e.title} at ${e.company} (${e.duration})\n   ${e.duties}`).join('\n')}
+EDUCATION:
+${f.educations.map((e,i)=>`${i+1}. ${e.degree} - ${e.institution} (${e.year})`).join('\n')}
+SKILLS: ${f.skills}
+
+Use clear section headings: PROFESSIONAL SUMMARY, WORK EXPERIENCE, EDUCATION, SKILLS. Write 3-4 strong bullet points per job. Plain text only, no markdown symbols.`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
+    });
+    const data=await res.json();
+    state.generatedCV=data.content?.map(b=>b.text||'').join('')||'Error generating CV.';
+  }catch(e){
+    state.generatedCV='Something went wrong. Please try again.';
+  }
+  state.loading=false; render();
+}
+
+// ── PWA Service Worker ────────────────────────────────────────────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
