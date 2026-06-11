@@ -443,13 +443,13 @@ SKILLS: ${f.skills}
 Use clear section headings: PROFESSIONAL SUMMARY, WORK EXPERIENCE, EDUCATION, SKILLS. Write 3-4 strong bullet points per job. Plain text only, no markdown symbols.`;
 
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const res=await fetch('/.netlify/functions/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({prompt})
     });
     const data=await res.json();
-    state.generatedCV=data.content?.map(b=>b.text||'').join('')||'Error generating CV.';
+    state.generatedCV=data.text||'Error generating CV.';
   }catch(e){
     state.generatedCV='Something went wrong. Please try again.';
   }
