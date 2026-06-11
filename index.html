@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CVNepal - Free AI CV Generator</title>
+  <meta name="description" content="Free AI-powered CV generator for Nepali professionals in the UK"/>
+  <meta name="theme-color" content="#c0392b"/>
+  <link rel="manifest" href="manifest.json"/>
+  <!-- PWA iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="CVNepal"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;min-height:100vh;}
+    input,textarea,button{font-family:inherit;}
+    .inp{width:100%;border:1px solid #dde3ea;border-radius:8px;padding:9px 12px;font-size:14px;outline:none;background:#fff;}
+    .inp:focus{border-color:#c0392b;}
+    .lbl{display:block;font-size:11px;font-weight:700;color:#6b7280;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+    .btn-red{background:#c0392b;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-navy{background:#1e3a5f;color:#fff;border:none;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;}
+    .btn-grey{background:#f1f5f9;color:#374151;border:1px solid #e2e8f0;border-radius:10px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;}
+    .card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin-bottom:14px;}
+    .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:#fff;padding:10px 22px;border-radius:20px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.2);display:none;}
+    .step-tab{padding:6px 13px;border-radius:20px;border:none;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;}
+    .spinner{width:40px;height:40px;border:3px solid #e2e8f0;border-top:3px solid #c0392b;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .nav{background:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 6px rgba(0,0,0,.07);position:sticky;top:0;z-index:10;}
+    .logo{font-size:20px;font-weight:800;cursor:pointer;}
+    .logo span{color:#c0392b;}
+    .logo b{color:#1e3a5f;}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .hidden{display:none;}
+    textarea{resize:vertical;}
+    .cv-preview{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:14px;}
+    .cv-header{background:#1e3a5f;color:#fff;padding:20px 22px 14px;}
+    .cv-body{padding:18px 22px;font-size:13px;line-height:1.65;color:#1e293b;white-space:pre-wrap;max-height:360px;overflow-y:auto;}
+    .feature-grid{display:flex;gap:12px;padding:0 16px 40px;flex-wrap:wrap;justify-content:center;}
+    .feature-card{background:#fff;border-radius:14px;padding:18px;width:150px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06);}
+    .hero{text-align:center;padding:50px 20px 36px;}
+    .steps-row{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px;}
+    .exp-card{background:#f8fafc;border-radius:10px;padding:14px;margin-bottom:12px;}
+    .add-btn{background:#f0f9ff;border:1px dashed #1e3a5f;color:#1e3a5f;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700;}
+    .saved-row{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.05);}
+    .tpl-grid{display:flex;gap:10px;margin-bottom:20px;}
+    .tpl-card{flex:1;border-radius:10px;padding:10px 8px;text-align:center;cursor:pointer;}
+  </style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+<div id="root"></div>
+
+<script>
+// ── Storage helpers ──────────────────────────────────────────────────────────
+function getUsers(){try{return JSON.parse(localStorage.getItem('cvn_users')||'{}')}catch{return{}}}
+function saveUsers(u){localStorage.setItem('cvn_users',JSON.stringify(u))}
+function getSession(){try{return JSON.parse(localStorage.getItem('cvn_session')||'null')}catch{return null}}
+function setSession(u){localStorage.setItem('cvn_session',JSON.stringify(u))}
+function clearSession(){localStorage.removeItem('cvn_session')}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let state = {
+  screen: 'home',
+  user: getSession(),
+  step: 0,
+  loading: false,
+  generatedCV: '',
+  savedCVs: [],
+  form: blankForm(),
+  authForm: {email:'',password:'',name:''},
+  authErr: ''
+};
+
+function blankForm(){
+  return {
+    name:'',email:'',phone:'',location:'',linkedin:'',summary:'',
+    experiences:[{title:'',company:'',duration:'',duties:''}],
+    educations:[{degree:'',institution:'',year:''}],
+    skills:'', template:'classic'
+  };
+}
+
+const TEMPLATES = [
+  {id:'classic', label:'Classic', desc:'Traditional', color:'#1e3a5f'},
+  {id:'modern',  label:'Modern',  desc:'Bold',        color:'#c0392b'},
+  {id:'minimal', label:'Minimal', desc:'Elegant',     color:'#2c3e50'},
+];
+const T = {
+  classic:{header:'#1e3a5f',accent:'#2980b9'},
+  modern: {header:'#c0392b',accent:'#e74c3c'},
+  minimal:{header:'#2c3e50',accent:'#7f8c8d'},
+};
+const STEPS = ['Personal','Experience','Education','Skills','Preview'];
+
+// ── Toast ────────────────────────────────────────────────────────────────────
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.display='block';
+  setTimeout(()=>t.style.display='none',2800);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render(){
+  document.getElementById('root').innerHTML = getHTML();
+  attachEvents();
+}
+
+function getHTML(){
+  const s = state;
+  if(s.screen==='home')     return homeHTML();
+  if(s.screen==='login')    return authHTML(false);
+  if(s.screen==='register') return authHTML(true);
+  if(s.screen==='myCVs')   return myCVsHTML();
+  return appHTML();
+}
+
+// ── HOME ─────────────────────────────────────────────────────────────────────
+function homeHTML(){
+  return `
+  <div style="background:#f0f4f8;min-height:100vh;">
+    <div class="nav">
+      <div class="logo"><span>CV</span><b>Nepal</b></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-grey" onclick="go('login')">Log in</button>
+        <button class="btn-red" onclick="go('register')">Sign up free</button>
+      </div>
+    </div>
+    <div class="hero">
+      <div style="font-size:52px;margin-bottom:12px;">📄</div>
+      <h1 style="font-size:28px;font-weight:900;color:#1e3a5f;line-height:1.2;margin-bottom:12px;">Build your CV in minutes</h1>
+      <p style="color:#6b7280;font-size:15px;margin-bottom:28px;max-width:360px;margin-left:auto;margin-right:auto;line-height:1.5;">
+        Free AI-powered CV generator. Choose a template, fill your details, download as PDF.
+      </p>
+      <button class="btn-red" style="font-size:16px;padding:14px 36px;" onclick="go('app')">
+        Create CV — it's free →
+      </button>
+    </div>
+    <div class="feature-grid">
+      ${[['🤖','AI-Powered','Claude AI writes your CV'],['🎨','3 Templates','Classic, Modern, Minimal'],['📥','PDF Download','Download instantly'],['💾','Save & Edit','Save multiple CVs']].map(([ic,t,d])=>`
+      <div class="feature-card">
+        <div style="font-size:28px;margin-bottom:8px;">${ic}</div>
+        <div style="font-weight:700;font-size:14px;color:#1e3a5f;margin-bottom:4px;">${t}</div>
+        <div style="font-size:12px;color:#9ca3af;line-height:1.4;">${d}</div>
+      </div>`).join('')}
+    </div>
+    <p style="text-align:center;color:#9ca3af;font-size:12px;padding-bottom:24px;">Built by Roshan Mishra · CVNepal</p>
+  </div>`;
+}
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+function authHTML(isReg){
+  return `
+  <div style="background:#f0f4f8;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+    <div class="card" style="width:100%;max-width:380px;">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div class="logo" style="font-size:24px;"><span>CV</span><b>Nepal</b></div>
+        <p style="color:#6b7280;font-size:14px;margin-top:6px;">${isReg?'Create your free account':'Welcome back'}</p>
+      </div>
+      ${isReg?`<div style="margin-bottom:14px;"><label class="lbl">Full Name</label><input class="inp" id="auth-name" placeholder="Your name" value="${state.authForm.name}"/></div>`:''}
+      <div style="margin-bottom:14px;"><label class="lbl">Email</label><input class="inp" id="auth-email" type="email" placeholder="you@email.com" value="${state.authForm.email}"/></div>
+      <div style="margin-bottom:18px;"><label class="lbl">Password</label><input class="inp" id="auth-pass" type="password" placeholder="••••••••"/></div>
+      ${state.authErr?`<p style="color:#e74c3c;font-size:13px;margin-bottom:14px;">${state.authErr}</p>`:''}
+      <button class="btn-red" style="width:100%;padding:13px;" onclick="${isReg?'doRegister()':'doLogin()'}">
+        ${isReg?'Create account':'Log in'}
+      </button>
+      <p style="text-align:center;margin-top:16px;font-size:13px;color:#6b7280;">
+        ${isReg?'Already have an account? ':'No account? '}
+        <span style="color:#c0392b;cursor:pointer;font-weight:700;" onclick="go('${isReg?'login':'register'}')">
+          ${isReg?'Log in':'Sign up free'}
+        </span>
+      </p>
+      <p style="text-align:center;margin-top:6px;">
+        <span style="color:#9ca3af;font-size:12px;cursor:pointer;" onclick="go('app')">Continue without account →</span>
+      </p>
+    </div>
+  </div>`;
+}
+
+// ── MY CVs ────────────────────────────────────────────────────────────────────
+function myCVsHTML(){
+  const cvs = state.savedCVs;
+  return `
+  <div style="background:#f0f4f8;min-height:100vh;padding:16px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <button class="btn-grey" onclick="go('app')">← Back</button>
+      <span style="font-size:18px;font-weight:800;color:#1e3a5f;">My Saved CVs</span>
+    </div>
+    ${cvs.length===0?`
+    <div style="text-align:center;padding:40px 0;color:#9ca3af;">
+      <div style="font-size:40px;margin-bottom:12px;">📭</div>
+      <p style="margin-bottom:16px;">No saved CVs yet.</p>
+      <button class="btn-red" onclick="go('app')">Create CV</button>
+    </div>`
+    : cvs.map((s,i)=>`
+    <div class="saved-row">
+      <div>
+        <div style="font-weight:700;color:#1e3a5f;font-size:15px;">${s.title||'Untitled'}</div>
+        <div style="font-size:12px;color:#9ca3af;">${s.template} · ${s.date}</div>
+      </div>
+      <button class="btn-navy" onclick="loadCV(${i})">Open</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+function appHTML(){
+  const s = state;
+  const tColor = T[s.form.template]?.header || '#1e3a5f';
+  return `
+  <div style="background:#f0f4f8;min-height:100vh;">
+    <div class="nav">
+      <div class="logo" onclick="go('home')"><span>CV</span><b>Nepal</b></div>
+      <div style="display:flex;gap:8px;">
+        ${s.user?`
+          <button class="btn-grey" onclick="loadMyCVs()">My CVs</button>
+          <button style="background:#fee2e2;color:#c0392b;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;" onclick="doLogout()">Log out</button>
+        `:`<button class="btn-navy" onclick="go('login')">Log in</button>`}
+      </div>
+    </div>
+    <div style="padding:16px;">
+      <div class="steps-row">
+        ${STEPS.map((st,i)=>`
+        <button class="step-tab" style="background:${s.step===i?tColor:'#e2e8f0'};color:${s.step===i?'#fff':'#64748b'};" onclick="if(${i}<4)setStep(${i})">
+          ${i+1}. ${st}
+        </button>`).join('')}
+      </div>
+      <div class="card">
+        ${stepHTML()}
+      </div>
+      <div style="display:flex;gap:10px;">
+        ${s.step>0?`<button class="btn-grey" style="flex:1;" onclick="setStep(${s.step-1})">← Back</button>`:''}
+        ${s.step<3?`<button style="flex:1;background:${tColor};color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;" onclick="setStep(${s.step+1})">Next →</button>`:''}
+        ${s.step===3?`<button style="flex:1;background:${tColor};color:#fff;border:none;border-radius:10px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;" onclick="setStep(4)">Preview & Generate ✦</button>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function stepHTML(){
+  const s = state;
+  const f = s.form;
+  const tColor = T[f.template]?.header||'#1e3a5f';
+
+  if(s.step===0) return `
+    <h2 style="margin:0 0 6px;font-size:16px;color:#1e293b;">Choose Template</h2>
+    <div class="tpl-grid">
+      ${TEMPLATES.map(t=>`
+      <div class="tpl-card" style="border:2px solid ${f.template===t.id?t.color:'#e2e8f0'};background:${f.template===t.id?t.color+'11':'#fff'};" onclick="setTemplate('${t.id}')">
+        <div style="width:100%;height:6px;border-radius:3px;background:${t.color};margin-bottom:6px;"></div>
+        <div style="font-size:12px;font-weight:700;color:${f.template===t.id?t.color:'#374151'};">${t.label}</div>
+        <div style="font-size:10px;color:#9ca3af;">${t.desc}</div>
+      </div>`).join('')}
+    </div>
+    <h2 style="margin:0 0 14px;font-size:16px;color:#1e293b;">Personal Details</h2>
+    ${[['name','Full Name'],['email','Email'],['phone','Phone Number'],['location','Location (e.g. York, UK)'],['linkedin','LinkedIn (optional)']].map(([field,label])=>`
+    <div style="margin-bottom:12px;">
+      <label class="lbl">${label}</label>
+      <input class="inp" data-field="${field}" value="${esc(f[field])}" placeholder="${label}"/>
+    </div>`).join('')}
+    <div>
+      <label class="lbl">Professional Summary</label>
+      <textarea class="inp" data-field="summary" style="height:80px;" placeholder="e.g. Motivated civil engineering graduate with 5+ years experience...">${esc(f.summary)}</textarea>
+    </div>`;
+
+  if(s.step===1) return `
+    <h2 style="margin:0 0 16px;font-size:16px;color:#1e293b;">Work Experience</h2>
+    ${f.experiences.map((exp,i)=>`
+    <div class="exp-card">
+      <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:${tColor};">Experience #${i+1}</p>
+      ${[['title','Job Title'],['company','Company Name'],['duration','Duration (e.g. Jan 2022 – Dec 2023)']].map(([field,label])=>`
+      <div style="margin-bottom:8px;">
+        <label class="lbl">${label}</label>
+        <input class="inp" style="background:#fff;" data-exp="${i}" data-field="${field}" value="${esc(exp[field])}" placeholder="${label}"/>
+      </div>`).join('')}
+      <label class="lbl">Key Responsibilities</label>
+      <textarea class="inp" style="background:#fff;height:70px;" data-exp="${i}" data-field="duties" placeholder="Describe your main duties...">${esc(exp.duties)}</textarea>
+    </div>`).join('')}
+    <button class="add-btn" style="border-color:${tColor};color:${tColor};" onclick="addExp()">+ Add Experience</button>`;
+
+  if(s.step===2) return `
+    <h2 style="margin:0 0 16px;font-size:16px;color:#1e293b;">Education</h2>
+    ${f.educations.map((edu,i)=>`
+    <div class="exp-card">
+      <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:${tColor};">Education #${i+1}</p>
+      ${[['degree','Degree / Qualification'],['institution','University / School'],['year','Year Completed']].map(([field,label])=>`
+      <div style="margin-bottom:8px;">
+        <label class="lbl">${label}</label>
+        <input class="inp" style="background:#fff;" data-edu="${i}" data-field="${field}" value="${esc(edu[field])}" placeholder="${label}"/>
+      </div>`).join('')}
+    </div>`).join('')}
+    <button class="add-btn" style="border-color:${tColor};color:${tColor};" onclick="addEdu()">+ Add Education</button>`;
+
+  if(s.step===3) return `
+    <h2 style="margin:0 0 14px;font-size:16px;color:#1e293b;">Skills</h2>
+    <label class="lbl">List your skills (comma separated)</label>
+    <textarea class="inp" data-field="skills" style="height:120px;" placeholder="e.g. AutoCAD, Project Management, Cost Estimation, Microsoft Excel...">${esc(f.skills)}</textarea>
+    <div style="background:#f0fdf4;border-radius:10px;padding:12px;margin-top:16px;border:1px solid #bbf7d0;">
+      <p style="margin:0;font-size:13px;color:#15803d;">✓ All details ready! Click <strong>Preview & Generate</strong> to create your CV.</p>
+    </div>`;
+
+  if(s.step===4) return `
+    <h2 style="margin:0 0 16px;font-size:16px;color:#1e293b;">Your CV</h2>
+    ${!s.generatedCV && !s.loading ? `
+    <div style="text-align:center;padding:20px 0;">
+      <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">Ready to generate your <strong>${f.template}</strong> CV for <strong>${esc(f.name)||'you'}</strong>!</p>
+      <button class="btn-red" style="font-size:16px;padding:14px 32px;" onclick="generateCV()">✦ Generate with Claude AI</button>
+    </div>` : ''}
+    ${s.loading ? `
+    <div style="text-align:center;padding:30px 0;">
+      <div class="spinner"></div>
+      <p style="color:${tColor};font-size:14px;font-weight:600;">Claude AI is writing your CV...</p>
+    </div>` : ''}
+    ${s.generatedCV ? `
+    <div class="cv-preview">
+      <div class="cv-header" style="background:${tColor};">
+        <div style="font-size:22px;font-weight:800;">${esc(f.name)||'Your Name'}</div>
+        <div style="font-size:12px;opacity:.85;margin-top:6px;">${[f.email,f.phone,f.location,f.linkedin].filter(Boolean).join('  |  ')}</div>
+      </div>
+      <div class="cv-body">${esc(s.generatedCV)}</div>
+    </div>
+    <div class="grid2">
+      <button class="btn-navy" style="padding:12px;" onclick="downloadPDF()">📥 Download PDF</button>
+      <button class="btn-grey" style="padding:12px;" onclick="saveCV()">💾 Save CV</button>
+      <button class="btn-grey" style="padding:12px;" onclick="generateCV()">🔄 Regenerate</button>
+      <button style="background:#fee2e2;color:#c0392b;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;" onclick="startOver()">✕ Start Over</button>
+    </div>` : ''}`;
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Events ────────────────────────────────────────────────────────────────────
+function attachEvents(){
+  document.querySelectorAll('input[data-field],textarea[data-field]').forEach(el=>{
+    el.addEventListener('input',e=>{
+      const field = e.target.dataset.field;
+      const expIdx = e.target.dataset.exp;
+      const eduIdx = e.target.dataset.edu;
+      if(expIdx!==undefined){
+        state.form.experiences[+expIdx][field]=e.target.value;
+      } else if(eduIdx!==undefined){
+        state.form.educations[+eduIdx][field]=e.target.value;
+      } else {
+        state.form[field]=e.target.value;
+      }
+    });
+  });
+  // auth inputs
+  ['auth-name','auth-email','auth-pass'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('input',e=>{
+      if(id==='auth-name') state.authForm.name=e.target.value;
+      if(id==='auth-email') state.authForm.email=e.target.value;
+      if(id==='auth-pass') state.authForm.password=e.target.value;
+    });
+  });
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function go(screen){ state.screen=screen; state.authErr=''; render(); }
+function setStep(n){ state.step=n; render(); }
+function setTemplate(t){ state.form.template=t; render(); }
+function addExp(){ state.form.experiences.push({title:'',company:'',duration:'',duties:''}); render(); }
+function addEdu(){ state.form.educations.push({degree:'',institution:'',year:''}); render(); }
+function startOver()
